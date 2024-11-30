@@ -74,18 +74,8 @@ handler nameMap = \case
           Prelude.filter
             (\c -> applicationCommandName c `notElem` (createName <$> coms))
             oldComs
-    putStrLn "removing coms"
-    print removedComs
     forM_ removedComs $ rc_ . DeleteGlobalApplicationCommand i . applicationCommandId
-    putStrLn "oldComs"
-    print oldComs
-    putStrLn "registering commands"
-    forM_
-      coms
-      ( \c -> do
-          print c
-          rc $ CreateGlobalApplicationCommand i c
-      )
+    forM_ coms $ rc . CreateGlobalApplicationCommand i
     putStrLn "commands registered"
   InteractionCreate interaction ->
     mkInteractionHandler interaction $
@@ -119,69 +109,63 @@ handler nameMap = \case
                     let curName = case memberOrUser of
                           Left (GuildMember {memberNick = (Just nick)}) -> nick
                           _ -> ""
-                    rolledName <- Response $ lift $ lift $ do
+                    rolledName <- liftIO $ do
                       m <- getNameMap nameMap
                       let names = filter (/= curName) $ fromMaybe [] $ M.lookup uid m
-                      print names
                       i <- randomRIO (0, length names - 1)
                       pure $ names !! i
-                    Response $
-                      lift $
-                        rc_ $
-                          ModifyGuildMember
-                            gid
-                            uid
-                            nop {modifyGuildMemberOptsNickname = Just rolledName}
+                    rrc_ $
+                      ModifyGuildMember
+                        gid
+                        uid
+                        nop {modifyGuildMemberOptsNickname = Just rolledName}
                     respond $ interactionResponseBasic $ "<:cap:1307053757351333929>" <> rolledName <> "<:cap:1307053757351333929>"
                   "n" -> do
                     newName <- getNameArg
-                    Response $
-                      lift $
-                        rc_ $
-                          ModifyGuildMember
-                            gid
-                            uid
-                            nop {modifyGuildMemberOptsNickname = Just newName}
+                    rrc_ $
+                      ModifyGuildMember
+                        gid
+                        uid
+                        nop {modifyGuildMemberOptsNickname = Just newName}
                     respond $ interactionResponseBasic "okay <:cap:1307053757351333929>"
                   "add" -> do
-                    putStrLn "running add"
                     newName <- getNameArg
-                    Response $
-                      lift $
-                        lift $
-                          updateNameMap nameMap $
-                            M.alter (Just . (newName :) . fromMaybe []) uid
+                    liftIO $
+                      updateNameMap nameMap $
+                        M.alter (Just . (newName :) . fromMaybe []) uid
                     respond $ interactionResponseBasic "Added"
-                    putStrLn "done add"
                   "rm" -> do
                     putStrLn "running rm"
                     targetName <- getNameArg
-                    Response $
-                      lift $
-                        lift $
-                          updateNameMap nameMap $
-                            M.alter (Just . filter (/= targetName) . fromMaybe []) uid
+                    liftIO $
+                      updateNameMap nameMap $
+                        M.alter (Just . filter (/= targetName) . fromMaybe []) uid
                     respond $ interactionResponseBasic "Removed"
                   c -> print c
             )
         ( InteractionApplicationCommandAutocomplete
             { applicationCommandData =
-              ApplicationCommandDataChatInput {}
+              ApplicationCommandDataChatInput
+                { applicationCommandDataName = commandName
+                }
             , interactionUser = MemberOrUser memberOrUser
             }
-          ) -> do
-            names <- Response $ lift $ lift $ do
-              uid <- case memberOrUser of
-                Right user -> pure $ userId user
-                Left (GuildMember {memberUser = Just user}) -> pure $ userId user
-                _ -> die "no user"
-              nameMap' <- getNameMap nameMap
-              pure $ fromMaybe [] . M.lookup uid $ nameMap'
-            respond $ do
-              InteractionResponseAutocompleteResult $
-                InteractionResponseAutocompleteString $
-                  (\n -> Choice {choiceName = n, choiceValue = n, choiceLocalizedName = Nothing})
-                    <$> names
+          ) ->
+            do
+              names <- case commandName of
+                "add" -> pure []
+                _ -> liftIO $ do
+                  uid <- case memberOrUser of
+                    Right user -> pure $ userId user
+                    Left (GuildMember {memberUser = Just user}) -> pure $ userId user
+                    _ -> die "no user"
+                  nameMap' <- getNameMap nameMap
+                  pure $ fromMaybe [] . M.lookup uid $ nameMap'
+              respond $ do
+                InteractionResponseAutocompleteResult $
+                  InteractionResponseAutocompleteString $
+                    (\n -> Choice {choiceName = n, choiceValue = n, choiceLocalizedName = Nothing})
+                      <$> names
         _i -> pass
   _e -> pass
 
@@ -211,7 +195,7 @@ coms =
               , optionValueLocalizedDescription = Nothing
               , optionValueStringMinLen = Nothing
               , optionValueStringMaxLen = Nothing
-              , optionValueStringChoices = Left True
+              , optionValueStringChoices = Left False
               , optionValueRequired = True
               }
           ]
@@ -244,6 +228,9 @@ simpleCommand name desc opts =
     , createDefaultMemberPermissions = Nothing
     , createDMPermission = Nothing
     }
+
+rrc_ :: (Request (r a), FromJSON a) => r a -> Response ()
+rrc_ = Response . lift . void . rc
 
 rc_ :: (Request (r a), FromJSON a) => r a -> DiscordHandler ()
 rc_ = void . rc
