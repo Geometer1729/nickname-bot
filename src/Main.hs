@@ -23,7 +23,11 @@ main = do
       [] -> T.strip . decodeUtf8 <$> readFileBS "./token.auth"
       [token] -> pure $ T.strip $ fromString token
       _ -> die "Expected 0 or 1 arguments"
-  nameMap <- getNameMapFile >>= atomically <$> newTMVar
+  nameMap <-
+    try @IOException (read . decodeUtf8 <$> readFileBS "./name_map") <&> \case
+      Right m -> m
+      Left _ -> M.empty
+      >>= newTVarIO
   print
     =<< runDiscord
       def
@@ -39,39 +43,22 @@ main = do
 
 type NameMap = Map UserId [Text]
 
-getNameMap :: TMVar NameMap -> IO NameMap
-getNameMap = atomically . readTMVar
+updateNameMap :: TVar NameMap -> (NameMap -> NameMap) -> IO ()
+updateNameMap nameMap f = do
+  atomically $ modifyTVar' nameMap f
+  void $ forkIO $ do
+    m <- readTVarIO nameMap
+    try @IOException (writeFileBS "./name_map" (encodeUtf8 @Text @ByteString $ show m)) >>= \case
+      Left i -> print i
+      Right () -> pass
 
-updateNameMap :: TMVar NameMap -> (NameMap -> NameMap) -> IO ()
-updateNameMap nameMap f =
-  atomically
-    ( do
-        m <- takeTMVar nameMap
-        let new = f m
-        putTMVar nameMap new
-        pure new
-    )
-    >>= void . forkIO . setNameMapFile
-
-getNameMapFile :: IO NameMap
-getNameMapFile =
-  (try @IOException $ read . decodeUtf8 <$> readFileBS "./name_map") <&> \case
-    Right m -> m
-    Left _ -> M.empty
-
-setNameMapFile :: NameMap -> IO ()
-setNameMapFile m =
-  try @IOException (writeFileBS "./name_map" (encodeUtf8 @Text @ByteString $ show m)) >>= \case
-    Left i -> print i
-    Right () -> pass
-
-handler :: TMVar NameMap -> Event -> DiscordHandler ()
+handler :: TVar NameMap -> Event -> DiscordHandler ()
 handler nameMap = \case
   Ready _ _ _ _ _ _ (PartialApplication i _) -> do
     putStrLn "ready"
     oldComs <- rc $ GetGlobalApplicationCommands i
     let removedComs =
-          Prelude.filter
+          filter
             (\c -> applicationCommandName c `notElem` (createName <$> coms))
             oldComs
     forM_ removedComs $ rc_ . DeleteGlobalApplicationCommand i . applicationCommandId
@@ -110,7 +97,7 @@ handler nameMap = \case
                           Left (GuildMember {memberNick = (Just nick)}) -> nick
                           _ -> ""
                     rolledName <- liftIO $ do
-                      m <- getNameMap nameMap
+                      m <- readTVarIO nameMap
                       let names = filter (/= curName) $ fromMaybe [] $ M.lookup uid m
                       i <- randomRIO (0, length names - 1)
                       pure $ names !! i
@@ -127,7 +114,7 @@ handler nameMap = \case
                         gid
                         uid
                         nop {modifyGuildMemberOptsNickname = Just newName}
-                    respond $ interactionResponseBasic "okay <:cap:1307053757351333929>"
+                    respond $ interactionResponseBasic "Nicked <:cap:1307053757351333929>"
                   "add" -> do
                     newName <- getNameArg
                     liftIO $
@@ -159,7 +146,7 @@ handler nameMap = \case
                     Right user -> pure $ userId user
                     Left (GuildMember {memberUser = Just user}) -> pure $ userId user
                     _ -> die "no user"
-                  nameMap' <- getNameMap nameMap
+                  nameMap' <- readTVarIO nameMap
                   pure $ fromMaybe [] . M.lookup uid $ nameMap'
               respond $ do
                 InteractionResponseAutocompleteResult $
