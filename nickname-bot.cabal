@@ -77,14 +77,16 @@ common shared
   build-depends:
     , aeson
     , async
-    , base          >=4   && <5
+    , base             >=4   && <5
     , data-default
     , directory
+    , discord-haskell
     , filepath
     , mtl
     , optics-core
     , profunctors
-    , relude        >=1.0
+    , random
+    , relude           >=1.0
     , shower
     , time
     , with-utf8
