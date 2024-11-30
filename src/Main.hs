@@ -12,7 +12,7 @@ import Discord.Internal.Rest.ApplicationCommands
 import Discord.Internal.Rest.Guild
 import Discord.Internal.Rest.Interactions
 import Relude.Unsafe (read, (!!))
-import System.Exit (ExitCode (ExitFailure))
+import System.Exit (ExitCode (ExitSuccess))
 import System.Posix.Process (exitImmediately)
 import System.Random
 
@@ -124,7 +124,7 @@ handler nameMap = \case
                     respond $ interactionResponseBasic "Removed"
                   "restart" -> do
                     respond $ interactionResponseBasic "Bye"
-                    liftIO $ exitImmediately (ExitFailure 1)
+                    liftIO $ exitImmediately ExitSuccess
                   -- restarting left as an exercise to systemd
                   c -> print c
             )
