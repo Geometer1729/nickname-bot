@@ -1,5 +1,3 @@
-{-# LANGUAGE RecordWildCards #-}
-
 module Main where
 
 import Control.Concurrent (forkIO)
@@ -61,11 +59,11 @@ handler nameMap = \case
           filter
             (\c -> applicationCommandName c `notElem` (createName <$> coms))
             oldComs
-    forM_ removedComs $ rc_ . DeleteGlobalApplicationCommand i . applicationCommandId
+    forM_ removedComs $ rc . DeleteGlobalApplicationCommand i . applicationCommandId
     forM_ coms $ rc . CreateGlobalApplicationCommand i
     putStrLn "commands registered"
   InteractionCreate interaction ->
-    mkInteractionHandler interaction $
+    withResponder interaction $ \respond ->
       case interaction of
         ( InteractionApplicationCommand
             { applicationCommandData =
@@ -74,7 +72,7 @@ handler nameMap = \case
                 , optionsData = options
                 }
             , interactionUser = MemberOrUser memberOrUser
-            , interactionGuildId = gid'
+            , interactionGuildId = mgid
             }
           ) ->
             ( do
@@ -82,7 +80,7 @@ handler nameMap = \case
                   Right user -> pure $ userId user
                   Left (GuildMember {memberUser = Just user}) -> pure $ userId user
                   _ -> die "no user"
-                gid <- case gid' of
+                gid <- case mgid of
                   Just gid -> pure gid
                   Nothing -> die "no gid"
                 let getNameArg = maybe (die "bad args") pure $ case options of
@@ -101,20 +99,11 @@ handler nameMap = \case
                       let names = filter (/= curName) $ fromMaybe [] $ M.lookup uid m
                       i <- randomRIO (0, length names - 1)
                       pure $ names !! i
-                    rrc_ $
-                      ModifyGuildMember
-                        gid
-                        uid
-                        nop {modifyGuildMemberOptsNickname = Just rolledName}
-                    respond $ interactionResponseBasic $ "<:cap:1307053757351333929>" <> rolledName <> "<:cap:1307053757351333929>"
+                    setName gid uid rolledName
+                    respond $ interactionResponseBasic $ cap <> rolledName <> cap
                   "n" -> do
-                    newName <- getNameArg
-                    rrc_ $
-                      ModifyGuildMember
-                        gid
-                        uid
-                        nop {modifyGuildMemberOptsNickname = Just newName}
-                    respond $ interactionResponseBasic "Nicked <:cap:1307053757351333929>"
+                    getNameArg >>= setName gid uid
+                    respond $ interactionResponseBasic $ "Nicked" <> cap
                   "add" -> do
                     newName <- getNameArg
                     liftIO $
@@ -216,9 +205,6 @@ simpleCommand name desc opts =
     , createDMPermission = Nothing
     }
 
-rrc_ :: (Request (r a), FromJSON a) => r a -> Response ()
-rrc_ = Response . lift . void . rc
-
 rc_ :: (Request (r a), FromJSON a) => r a -> DiscordHandler ()
 rc_ = void . rc
 
@@ -228,49 +214,23 @@ rc a =
     Right r -> pure r
     Left err -> die $ show err
 
-newtype Response a
-  = Response
-      (ReaderT Info DiscordHandler a)
-  deriving newtype
-    ( Functor
-    , Applicative
-    , Monad
-    , MonadIO
-    )
+cap :: Text
+cap = "<:cap:1307053757351333929>"
 
-data Info = Info
-  { infoInteractionId :: InteractionId
-  , infoInteractionToken :: InteractionToken
-  , infoInteractionApplicationId :: ApplicationId
-  }
+withResponder :: Interaction -> ((InteractionResponse -> DiscordHandler ()) -> DiscordHandler a) -> DiscordHandler a
+withResponder interaction f = f $ rc . CreateInteractionResponse (interactionId interaction) (interactionToken interaction)
 
-respond :: InteractionResponse -> Response ()
-respond ir = Response $ do
-  Info {..} <- ask
-  lift $
-    rc_ $
-      CreateInteractionResponse
-        infoInteractionId
-        infoInteractionToken
-        ir
-
-mkInteractionHandler :: Interaction -> Response () -> DiscordHandler ()
-mkInteractionHandler interaction (Response r) =
-  runReaderT
-    r
-    Info
-      { infoInteractionId = interactionId interaction
-      , infoInteractionToken = interactionToken interaction
-      , infoInteractionApplicationId = interactionApplicationId interaction
-      }
-
-nop :: ModifyGuildMemberOpts
-nop =
-  ModifyGuildMemberOpts
-    { modifyGuildMemberOptsNickname = Nothing
-    , modifyGuildMemberOptsRoles = Nothing
-    , modifyGuildMemberOptsIsMuted = Nothing
-    , modifyGuildMemberOptsIsDeafened = Nothing
-    , modifyGuildMemberOptsMoveToChannel = Nothing
-    , modifyGuildMemberOptsTimeoutUntil = Nothing
-    }
+setName :: GuildId -> UserId -> Text -> DiscordHandler ()
+setName gid uid name =
+  rc_ $
+    ModifyGuildMember
+      gid
+      uid
+      ModifyGuildMemberOpts
+        { modifyGuildMemberOptsNickname = Just name
+        , modifyGuildMemberOptsRoles = Nothing
+        , modifyGuildMemberOptsIsMuted = Nothing
+        , modifyGuildMemberOptsIsDeafened = Nothing
+        , modifyGuildMemberOptsMoveToChannel = Nothing
+        , modifyGuildMemberOptsTimeoutUntil = Nothing
+        }
