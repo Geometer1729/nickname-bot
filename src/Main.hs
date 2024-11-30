@@ -117,6 +117,7 @@ handler nameMap = \case
                       updateNameMap nameMap $
                         M.alter (Just . filter (/= targetName) . fromMaybe []) uid
                     respond $ interactionResponseBasic "Removed"
+                  "restart" -> exitSuccess -- restarting left as an exercise to systemd
                   c -> print c
             )
         ( InteractionApplicationCommandAutocomplete
@@ -191,6 +192,7 @@ coms =
           ]
   , simpleCommand "rn" "chose random name" Nothing
   , simpleCommand "help" "send help text" Nothing
+  , simpleCommand "restart" "restart the bot" Nothing
   ]
 
 simpleCommand :: Text -> Text -> Maybe Options -> CreateApplicationCommand
