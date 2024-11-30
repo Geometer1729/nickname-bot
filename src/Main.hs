@@ -12,6 +12,8 @@ import Discord.Internal.Rest.ApplicationCommands
 import Discord.Internal.Rest.Guild
 import Discord.Internal.Rest.Interactions
 import Relude.Unsafe (read, (!!))
+import System.Exit (ExitCode (ExitFailure))
+import System.Posix.Process (exitImmediately)
 import System.Random
 
 main :: IO ()
@@ -97,8 +99,11 @@ handler nameMap = \case
                     rolledName <- liftIO $ do
                       m <- readTVarIO nameMap
                       let names = filter (/= curName) $ fromMaybe [] $ M.lookup uid m
-                      i <- randomRIO (0, length names - 1)
-                      pure $ names !! i
+                      case names of
+                        [] -> pure "HURR I USED /rn without any nicknames"
+                        _ -> do
+                          i <- randomRIO (0, length names - 1)
+                          pure $ names !! i
                     setName gid uid rolledName
                     respond $ interactionResponseBasic $ cap <> rolledName <> cap
                   "n" -> do
@@ -117,7 +122,10 @@ handler nameMap = \case
                       updateNameMap nameMap $
                         M.alter (Just . filter (/= targetName) . fromMaybe []) uid
                     respond $ interactionResponseBasic "Removed"
-                  "restart" -> exitSuccess -- restarting left as an exercise to systemd
+                  "restart" -> do
+                    respond $ interactionResponseBasic "Bye"
+                    liftIO $ exitImmediately (ExitFailure 1)
+                  -- restarting left as an exercise to systemd
                   c -> print c
             )
         ( InteractionApplicationCommandAutocomplete

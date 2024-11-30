@@ -89,6 +89,7 @@ common shared
     , relude           >=1.0
     , shower
     , time
+    , unix
     , with-utf8
 
   hs-source-dirs:     src
