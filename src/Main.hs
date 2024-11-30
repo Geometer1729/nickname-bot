@@ -11,6 +11,7 @@ import Discord.Internal.Rest
 import Discord.Internal.Rest.ApplicationCommands
 import Discord.Internal.Rest.Guild
 import Discord.Internal.Rest.Interactions
+import GHC.Conc (threadDelay)
 import Relude.Unsafe (read, (!!))
 import System.Exit (ExitCode (ExitSuccess))
 import System.Posix.Process (exitImmediately)
@@ -34,6 +35,7 @@ main = do
         { discordToken = token
         , discordOnStart = liftIO $ putStrLn "Starting"
         , discordOnEvent = handler nameMap
+        , discordOnEnd = flushMap nameMap
         , discordGatewayIntent =
             def
               { gatewayIntentMembers = True
@@ -46,11 +48,14 @@ type NameMap = Map UserId [Text]
 updateNameMap :: TVar NameMap -> (NameMap -> NameMap) -> IO ()
 updateNameMap nameMap f = do
   atomically $ modifyTVar' nameMap f
-  void $ forkIO $ do
-    m <- readTVarIO nameMap
-    try @IOException (writeFileBS "./name_map" (encodeUtf8 @Text @ByteString $ show m)) >>= \case
-      Left i -> print i
-      Right () -> pass
+  void $ forkIO $ flushMap nameMap
+
+flushMap :: TVar NameMap -> IO ()
+flushMap nameMap = do
+  m <- readTVarIO nameMap
+  try @IOException (writeFileBS "./name_map" (encodeUtf8 @Text @ByteString $ show m)) >>= \case
+    Left i -> print i
+    Right () -> pass
 
 handler :: TVar NameMap -> Event -> DiscordHandler ()
 handler nameMap = \case
@@ -123,9 +128,18 @@ handler nameMap = \case
                         M.alter (Just . filter (/= targetName) . fromMaybe []) uid
                     respond $ interactionResponseBasic "Removed"
                   "restart" -> do
+                    sendCommand $
+                      UpdateStatus $
+                        UpdateStatusOpts
+                          { updateStatusOptsSince = Nothing
+                          , updateStatusOptsActivities = [mkActivity "restarting" ActivityTypeCustom]
+                          , updateStatusOptsNewStatus = UpdateStatusDoNotDisturb
+                          , updateStatusOptsAFK = True
+                          }
                     respond $ interactionResponseBasic "Bye"
-                    liftIO $ exitImmediately ExitSuccess
-                  -- restarting left as an exercise to systemd
+                    liftIO $ do
+                      threadDelay 1000 -- hack to make sure status is set
+                      exitImmediately ExitSuccess
                   c -> print c
             )
         ( InteractionApplicationCommandAutocomplete
