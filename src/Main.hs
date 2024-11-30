@@ -2,6 +2,7 @@
 
 module Main where
 
+import Control.Concurrent (forkIO)
 import Control.Exception (try)
 import Control.Exception.Base (IOException)
 import Data.Map.Lazy qualified as M
@@ -22,12 +23,13 @@ main = do
       [] -> T.strip . decodeUtf8 <$> readFileBS "./token.auth"
       [token] -> pure $ T.strip $ fromString token
       _ -> die "Expected 0 or 1 arguments"
+  nameMap <- getNameMapFile >>= atomically <$> newTMVar
   print
     =<< runDiscord
       def
         { discordToken = token
         , discordOnStart = liftIO $ putStrLn "Starting"
-        , discordOnEvent = handler
+        , discordOnEvent = handler nameMap
         , discordGatewayIntent =
             def
               { gatewayIntentMembers = True
@@ -35,20 +37,36 @@ main = do
               }
         }
 
-getNameMap :: IO (Map UserId [Text])
-getNameMap =
+type NameMap = Map UserId [Text]
+
+getNameMap :: TMVar NameMap -> IO NameMap
+getNameMap = atomically . readTMVar
+
+updateNameMap :: TMVar NameMap -> (NameMap -> NameMap) -> IO ()
+updateNameMap nameMap f =
+  atomically
+    ( do
+        m <- takeTMVar nameMap
+        let new = f m
+        putTMVar nameMap new
+        pure new
+    )
+    >>= void . forkIO . setNameMapFile
+
+getNameMapFile :: IO NameMap
+getNameMapFile =
   (try @IOException $ read . decodeUtf8 <$> readFileBS "./name_map") <&> \case
     Right m -> m
     Left _ -> M.empty
 
-setNameMap :: Map UserId [Text] -> IO ()
-setNameMap m =
+setNameMapFile :: NameMap -> IO ()
+setNameMapFile m =
   try @IOException (writeFileBS "./name_map" (encodeUtf8 @Text @ByteString $ show m)) >>= \case
     Left i -> print i
     Right () -> pass
 
-handler :: Event -> DiscordHandler ()
-handler = \case
+handler :: TMVar NameMap -> Event -> DiscordHandler ()
+handler nameMap = \case
   Ready _ _ _ _ _ _ (PartialApplication i _) -> do
     putStrLn "ready"
     oldComs <- rc $ GetGlobalApplicationCommands i
@@ -82,109 +100,69 @@ handler = \case
             , interactionGuildId = gid'
             }
           ) ->
-            ( case name of
-                "help" ->
-                  respond $ interactionResponseBasic "<@283006687412224001> write some help text nerd"
-                "rn" -> do
-                  putStrLn "running rn"
-                  uid <- case memberOrUser of
-                    Right user -> pure $ userId user
-                    Left (GuildMember {memberUser = Just user}) -> pure $ userId user
-                    _ -> die "no user"
-                  let curName = case memberOrUser of
-                        Left (GuildMember {memberNick = (Just nick)}) -> nick
-                        _ -> ""
-                  gid <- case gid' of
-                    Just gid -> pure gid
-                    Nothing -> die "no gid"
-                  rolledName <- Response $ lift $ lift $ do
-                    m <- getNameMap
-                    print m
-                    putStrLn "read map"
-                    putStrLn "excludes"
-                    print curName
-                    putStrLn "choices"
-                    let names = filter (/= curName) $ fromMaybe [] $ M.lookup uid m
-                    print names
-                    i <- randomRIO (0, length names - 1)
-                    pure $ names !! i
-                  Response $
-                    lift $
-                      rc_ $
-                        ModifyGuildMember
-                          gid
-                          uid
-                          ModifyGuildMemberOpts
-                            { modifyGuildMemberOptsNickname = Just rolledName
-                            , modifyGuildMemberOptsRoles = Nothing
-                            , modifyGuildMemberOptsIsMuted = Nothing
-                            , modifyGuildMemberOptsIsDeafened = Nothing
-                            , modifyGuildMemberOptsMoveToChannel = Nothing
-                            , modifyGuildMemberOptsTimeoutUntil = Nothing
-                            }
-                  respond $ interactionResponseBasic "okay <:cap:1307053757351333929>"
-                "n" -> do
-                  putStrLn "running n"
-                  respond $ interactionResponseBasic "okay <:cap:1307053757351333929>"
-                  uid <- case memberOrUser of
-                    Right user -> pure $ userId user
-                    Left (GuildMember {memberUser = Just user}) -> pure $ userId user
-                    _ -> die "no user"
-                  gid <- case gid' of
-                    Just gid -> pure gid
-                    Nothing -> die "no gid"
-                  newName <- case options of
-                    Just (OptionsDataValues [OptionDataValueString {optionDataValueString = Right val}]) ->
-                      pure val
-                    _ -> die "bad options"
-                  Response $
-                    lift $
-                      rc_ $
-                        ModifyGuildMember
-                          gid
-                          uid
-                          ModifyGuildMemberOpts
-                            { modifyGuildMemberOptsNickname = Just newName
-                            , modifyGuildMemberOptsRoles = Nothing
-                            , modifyGuildMemberOptsIsMuted = Nothing
-                            , modifyGuildMemberOptsIsDeafened = Nothing
-                            , modifyGuildMemberOptsMoveToChannel = Nothing
-                            , modifyGuildMemberOptsTimeoutUntil = Nothing
-                            }
-                "add" -> do
-                  putStrLn "running add"
-                  uid <- case memberOrUser of
-                    Right user -> pure $ userId user
-                    Left (GuildMember {memberUser = Just user}) -> pure $ userId user
-                    _ -> die "no user"
-                  newName <- case options of
-                    Just (OptionsDataValues [OptionDataValueString {optionDataValueString = Right val}]) ->
-                      pure val
-                    _ -> die "bad options"
-                  Response $ lift $ lift $ do
-                    m <- getNameMap
-                    print m
-                    putStrLn "read map"
-                    let names = fromMaybe [] $ M.lookup uid m
-                    setNameMap $ M.insert uid (newName : names) m
-                  respond $ interactionResponseBasic "Added"
-                  putStrLn "done add"
-                "rm" -> do
-                  putStrLn "running rm"
-                  uid <- case memberOrUser of
-                    Right user -> pure $ userId user
-                    Left (GuildMember {memberUser = Just user}) -> pure $ userId user
-                    _ -> die "no user"
-                  newName <- case options of
-                    Just (OptionsDataValues [OptionDataValueString {optionDataValueString = Right val}]) ->
-                      pure val
-                    _ -> die "bad options"
-                  Response $ lift $ lift $ do
-                    m <- getNameMap
-                    let names = fromMaybe [] $ M.lookup uid m
-                    setNameMap $ M.insert uid (filter (/= newName) names) m
-                  respond $ interactionResponseBasic "Removed"
-                c -> print c
+            ( do
+                uid <- case memberOrUser of
+                  Right user -> pure $ userId user
+                  Left (GuildMember {memberUser = Just user}) -> pure $ userId user
+                  _ -> die "no user"
+                gid <- case gid' of
+                  Just gid -> pure gid
+                  Nothing -> die "no gid"
+                let getNameArg = maybe (die "bad args") pure $ case options of
+                      Just (OptionsDataValues [OptionDataValueString {optionDataValueString = Right val}]) ->
+                        Just val
+                      _ -> Nothing
+                case name of
+                  "help" ->
+                    respond $ interactionResponseBasic "Try adding some names with /add and then use /rn to roll a name"
+                  "rn" -> do
+                    let curName = case memberOrUser of
+                          Left (GuildMember {memberNick = (Just nick)}) -> nick
+                          _ -> ""
+                    rolledName <- Response $ lift $ lift $ do
+                      m <- getNameMap nameMap
+                      let names = filter (/= curName) $ fromMaybe [] $ M.lookup uid m
+                      print names
+                      i <- randomRIO (0, length names - 1)
+                      pure $ names !! i
+                    Response $
+                      lift $
+                        rc_ $
+                          ModifyGuildMember
+                            gid
+                            uid
+                            nop {modifyGuildMemberOptsNickname = Just rolledName}
+                    respond $ interactionResponseBasic $ "<:cap:1307053757351333929>" <> rolledName <> "<:cap:1307053757351333929>"
+                  "n" -> do
+                    newName <- getNameArg
+                    Response $
+                      lift $
+                        rc_ $
+                          ModifyGuildMember
+                            gid
+                            uid
+                            nop {modifyGuildMemberOptsNickname = Just newName}
+                    respond $ interactionResponseBasic "okay <:cap:1307053757351333929>"
+                  "add" -> do
+                    putStrLn "running add"
+                    newName <- getNameArg
+                    Response $
+                      lift $
+                        lift $
+                          updateNameMap nameMap $
+                            M.alter (Just . (newName :) . fromMaybe []) uid
+                    respond $ interactionResponseBasic "Added"
+                    putStrLn "done add"
+                  "rm" -> do
+                    putStrLn "running rm"
+                    targetName <- getNameArg
+                    Response $
+                      lift $
+                        lift $
+                          updateNameMap nameMap $
+                            M.alter (Just . filter (/= targetName) . fromMaybe []) uid
+                    respond $ interactionResponseBasic "Removed"
+                  c -> print c
             )
         ( InteractionApplicationCommandAutocomplete
             { applicationCommandData =
@@ -197,15 +175,15 @@ handler = \case
                 Right user -> pure $ userId user
                 Left (GuildMember {memberUser = Just user}) -> pure $ userId user
                 _ -> die "no user"
-              nameMap <- getNameMap
-              pure $ fromMaybe [] . M.lookup uid $ nameMap
+              nameMap' <- getNameMap nameMap
+              pure $ fromMaybe [] . M.lookup uid $ nameMap'
             respond $ do
               InteractionResponseAutocompleteResult $
                 InteractionResponseAutocompleteString $
                   (\n -> Choice {choiceName = n, choiceValue = n, choiceLocalizedName = Nothing})
                     <$> names
-        i -> pass
-  e -> pass
+        _i -> pass
+  _e -> pass
 
 coms :: [CreateApplicationCommand]
 coms =
@@ -311,3 +289,14 @@ mkInteractionHandler interaction (Response r) =
       , infoInteractionToken = interactionToken interaction
       , infoInteractionApplicationId = interactionApplicationId interaction
       }
+
+nop :: ModifyGuildMemberOpts
+nop =
+  ModifyGuildMemberOpts
+    { modifyGuildMemberOptsNickname = Nothing
+    , modifyGuildMemberOptsRoles = Nothing
+    , modifyGuildMemberOptsIsMuted = Nothing
+    , modifyGuildMemberOptsIsDeafened = Nothing
+    , modifyGuildMemberOptsMoveToChannel = Nothing
+    , modifyGuildMemberOptsTimeoutUntil = Nothing
+    }
