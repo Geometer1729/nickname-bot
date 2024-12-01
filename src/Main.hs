@@ -96,7 +96,7 @@ handler nameMap = \case
                       _ -> Nothing
                 case name of
                   "help" ->
-                    respond $ interactionResponseBasic "Try adding some names with /add and then use /rn to roll a name"
+                    respond $ interactionResponseBasic "The main commands you probably want to look at are /rn,/n and /add.\n If there's an issue with the bot ping me."
                   "rn" -> do
                     let curName = case memberOrUser of
                           Left (GuildMember {memberNick = (Just nick)}) -> nick
