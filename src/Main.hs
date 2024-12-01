@@ -23,6 +23,7 @@ main = do
       [] -> T.strip . decodeUtf8 <$> readFileBS "./token.auth"
       [token] -> pure $ T.strip $ fromString token
       _ -> die "Expected 0 or 1 arguments"
+  dontPingFor <- newTVarIO @_ @[Text] []
   nameMap <-
     try @IOException (read . decodeUtf8 <$> readFileBS "./name_map") <&> \case
       Right m -> m
@@ -33,7 +34,7 @@ main = do
       def
         { discordToken = token
         , discordOnStart = liftIO $ putStrLn "Starting"
-        , discordOnEvent = handler nameMap
+        , discordOnEvent = handler dontPingFor nameMap
         , discordOnEnd = flushMap nameMap
         , discordGatewayIntent =
             def
@@ -56,8 +57,8 @@ flushMap nameMap = do
     Left i -> print i
     Right () -> pass
 
-handler :: TVar NameMap -> Event -> DiscordHandler ()
-handler nameMap = \case
+handler :: TVar [Text] -> TVar NameMap -> Event -> DiscordHandler ()
+handler dontPingFor nameMap = \case
   Ready _ _ _ _ _ _ (PartialApplication i _) -> do
     putStrLn "ready"
     sendCommand $
@@ -83,31 +84,37 @@ handler nameMap = \case
     let mcid = case gid of
           (DiscordId (Snowflake 1189715747723817010)) -> Just $ DiscordId $ Snowflake 1312176640557715476
           _ -> Nothing
-    unless (newNickname `elem` names) $ forM_ mcid $ \cid ->
-      rc_ $
-        CreateMessageDetailed
-          cid
-          MessageDetailedOpts
-            { messageDetailedContent = "<@" <> show uid <> "> Want to add \"" <> newNickname <> "\" as a favorite?"
-            , messageDetailedTTS = False
-            , messageDetailedEmbeds = Nothing
-            , messageDetailedFile = Nothing
-            , messageDetailedStickerIds = Nothing
-            , messageDetailedAllowedMentions = Nothing
-            , messageDetailedReference = Nothing
-            , messageDetailedComponents =
-                Just
-                  [ ActionRowButtons
-                      [ Button
-                          { buttonCustomId = show uid <> ":" <> newNickname
-                          , buttonDisabled = False
-                          , buttonStyle = ButtonStylePrimary
-                          , buttonLabel = Just "Yes"
-                          , buttonEmoji = Nothing
-                          }
+    -- To avoid asking them (twice) on `/n`s
+    dontPingForNames <- readTVarIO dontPingFor
+    print dontPingForNames
+    unless (newNickname `elem` names) $
+      if newNickname `elem` dontPingForNames
+        then lift $ atomically $ modifyTVar' dontPingFor (filter (/= newNickname))
+        else forM_ mcid $ \cid ->
+          rc_ $
+            CreateMessageDetailed
+              cid
+              MessageDetailedOpts
+                { messageDetailedContent = "<@" <> show uid <> "> Want to add \"" <> newNickname <> "\" as a favorite?"
+                , messageDetailedTTS = False
+                , messageDetailedEmbeds = Nothing
+                , messageDetailedFile = Nothing
+                , messageDetailedStickerIds = Nothing
+                , messageDetailedAllowedMentions = Nothing
+                , messageDetailedReference = Nothing
+                , messageDetailedComponents =
+                    Just
+                      [ ActionRowButtons
+                          [ Button
+                              { buttonCustomId = show uid <> ":" <> newNickname
+                              , buttonDisabled = False
+                              , buttonStyle = ButtonStylePrimary
+                              , buttonLabel = Just "Yes"
+                              , buttonEmoji = Nothing
+                              }
+                          ]
                       ]
-                  ]
-            }
+                }
   InteractionCreate interaction ->
     withResponder interaction $ \respond ->
       case interaction of
@@ -154,10 +161,13 @@ handler nameMap = \case
                     newName <- getNameArg
                     m <- readTVarIO nameMap
                     let names = fromMaybe [] $ M.lookup uid m
-                    setName gid uid newName
                     if newName `elem` names
-                      then respond $ interactionResponseBasic $ "Nicked" <> cap
-                      else
+                      then do
+                        setName gid uid newName
+                        respond $ interactionResponseBasic $ "Nicked" <> cap
+                      else do
+                        lift $ atomically $ modifyTVar' dontPingFor (newName :)
+                        setName gid uid newName
                         respond $
                           InteractionResponseChannelMessage $
                             InteractionResponseMessage
