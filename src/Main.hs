@@ -9,8 +9,10 @@ import Discord
 import Discord.Interactions
 import Discord.Internal.Rest
 import Discord.Internal.Rest.ApplicationCommands
+import Discord.Internal.Rest.Channel (ChannelRequest (..))
 import Discord.Internal.Rest.Guild
 import Discord.Internal.Rest.Interactions
+import Discord.Requests (MessageDetailedOpts (..))
 import Relude.Unsafe (read, (!!))
 import System.Random
 
@@ -66,6 +68,38 @@ handler nameMap = \case
     forM_ removedComs $ rc . DeleteGlobalApplicationCommand i . applicationCommandId
     forM_ coms $ rc . CreateGlobalApplicationCommand i
     putStrLn "commands registered"
+  GuildMemberUpdate gid _ user (Just newNickname) -> do
+    let uid = userId user
+    m <- readTVarIO nameMap
+    let names = fromMaybe [] $ M.lookup uid m
+    let mcid = case gid of
+          (DiscordId (Snowflake 1189715747723817010)) -> Just $ DiscordId $ Snowflake 1312176640557715476
+          _ -> Nothing
+    unless (newNickname `elem` names) $ forM_ mcid $ \cid ->
+      rc_ $
+        CreateMessageDetailed
+          cid
+          MessageDetailedOpts
+            { messageDetailedContent = "Want to add " <> newNickname <> " as a favorite?"
+            , messageDetailedTTS = False
+            , messageDetailedEmbeds = Nothing
+            , messageDetailedFile = Nothing
+            , messageDetailedStickerIds = Nothing
+            , messageDetailedAllowedMentions = Nothing
+            , messageDetailedReference = Nothing
+            , messageDetailedComponents =
+                Just
+                  [ ActionRowButtons
+                      [ Button
+                          { buttonCustomId = show uid <> ":" <> newNickname
+                          , buttonDisabled = False
+                          , buttonStyle = ButtonStylePrimary
+                          , buttonLabel = Just "Yes"
+                          , buttonEmoji = Nothing
+                          }
+                      ]
+                  ]
+            }
   InteractionCreate interaction ->
     withResponder interaction $ \respond ->
       case interaction of
