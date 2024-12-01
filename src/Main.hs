@@ -11,10 +11,7 @@ import Discord.Internal.Rest
 import Discord.Internal.Rest.ApplicationCommands
 import Discord.Internal.Rest.Guild
 import Discord.Internal.Rest.Interactions
-import GHC.Conc (threadDelay)
 import Relude.Unsafe (read, (!!))
-import System.Exit (ExitCode (ExitSuccess))
-import System.Posix.Process (exitImmediately)
 import System.Random
 
 main :: IO ()
@@ -165,9 +162,7 @@ handler nameMap = \case
                           , updateStatusOptsAFK = True
                           }
                     respond $ interactionResponseBasic "Bye"
-                    liftIO $ do
-                      threadDelay 1000 -- hack to make sure status is set
-                      exitImmediately ExitSuccess
+                    stopDiscord
                   c -> print c
             )
         (InteractionComponent {componentData = ButtonData button}) -> do
