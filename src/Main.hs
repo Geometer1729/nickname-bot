@@ -112,8 +112,36 @@ handler nameMap = \case
                     setName gid uid rolledName
                     respond $ interactionResponseBasic $ cap <> rolledName <> cap
                   "n" -> do
-                    getNameArg >>= setName gid uid
-                    respond $ interactionResponseBasic $ "Nicked" <> cap
+                    newName <- getNameArg
+                    m <- readTVarIO nameMap
+                    let names = fromMaybe [] $ M.lookup uid m
+                    setName gid uid newName
+                    if newName `elem` names
+                      then respond $ interactionResponseBasic $ "Nicked" <> cap
+                      else
+                        respond $
+                          InteractionResponseChannelMessage $
+                            InteractionResponseMessage
+                              { interactionResponseMessageTTS = Nothing
+                              , interactionResponseMessageContent =
+                                  Just $ "Nicked to " <> newName <> cap
+                              , interactionResponseMessageEmbeds = Nothing
+                              , interactionResponseMessageAllowedMentions = Nothing
+                              , interactionResponseMessageFlags = Nothing
+                              , interactionResponseMessageComponents =
+                                  Just
+                                    [ ActionRowButtons
+                                        [ Button
+                                            { buttonCustomId = show uid <> ":" <> newName
+                                            , buttonDisabled = False
+                                            , buttonStyle = ButtonStylePrimary
+                                            , buttonLabel = Just "Add"
+                                            , buttonEmoji = Nothing
+                                            }
+                                        ]
+                                    ]
+                              , interactionResponseMessageAttachments = Nothing
+                              }
                   "add" -> do
                     newName <- getNameArg
                     liftIO $
@@ -142,6 +170,14 @@ handler nameMap = \case
                       exitImmediately ExitSuccess
                   c -> print c
             )
+        (InteractionComponent {componentData = ButtonData button}) -> do
+          let (uid', T.stripPrefix ":" -> mname) = T.breakOn ":" button
+          let uid = read @UserId $ toString uid'
+          newName <- maybe (die "bad button id?") pure mname
+          liftIO $
+            updateNameMap nameMap $
+              M.alter (Just . (newName :) . fromMaybe []) uid
+          respond $ interactionResponseBasic "Added"
         ( InteractionApplicationCommandAutocomplete
             { applicationCommandData =
               ApplicationCommandDataChatInput
