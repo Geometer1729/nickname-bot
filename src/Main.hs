@@ -102,7 +102,7 @@ handler nameMap = \case
                       m <- readTVarIO nameMap
                       let names = filter (/= curName) $ fromMaybe [] $ M.lookup uid m
                       case names of
-                        [] -> pure "HURR I USED /rn without any nicknames"
+                        [] -> pure "Add a nickname to use /rn"
                         _ -> do
                           i <- randomRIO (0, length names - 1)
                           pure $ names !! i
@@ -157,7 +157,7 @@ handler nameMap = \case
                       UpdateStatus $
                         UpdateStatusOpts
                           { updateStatusOptsSince = Nothing
-                          , updateStatusOptsActivities = [mkActivity "restarting" ActivityTypeCustom]
+                          , updateStatusOptsActivities = [mkActivity "restarting" ActivityTypeGame]
                           , updateStatusOptsNewStatus = UpdateStatusDoNotDisturb
                           , updateStatusOptsAFK = True
                           }
