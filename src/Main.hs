@@ -177,7 +177,29 @@ handler nameMap = \case
           liftIO $
             updateNameMap nameMap $
               M.alter (Just . (newName :) . fromMaybe []) uid
-          respond $ interactionResponseBasic "Added"
+          respond $
+            InteractionResponseUpdateMessage $
+              InteractionResponseMessage
+                { interactionResponseMessageTTS = Nothing
+                , interactionResponseMessageContent =
+                    Just $ "Nicked to " <> newName <> cap
+                , interactionResponseMessageEmbeds = Nothing
+                , interactionResponseMessageAllowedMentions = Nothing
+                , interactionResponseMessageFlags = Nothing
+                , interactionResponseMessageComponents =
+                    Just
+                      [ ActionRowButtons
+                          [ Button
+                              { buttonCustomId = show uid <> ":" <> newName
+                              , buttonDisabled = True
+                              , buttonStyle = ButtonStylePrimary
+                              , buttonLabel = Just "Add"
+                              , buttonEmoji = Nothing
+                              }
+                          ]
+                      ]
+                , interactionResponseMessageAttachments = Nothing
+                }
         ( InteractionApplicationCommandAutocomplete
             { applicationCommandData =
               ApplicationCommandDataChatInput
