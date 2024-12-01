@@ -68,6 +68,14 @@ handler nameMap = \case
     forM_ removedComs $ rc . DeleteGlobalApplicationCommand i . applicationCommandId
     forM_ coms $ rc . CreateGlobalApplicationCommand i
     putStrLn "commands registered"
+    sendCommand $
+      UpdateStatus $
+        UpdateStatusOpts
+          { updateStatusOptsSince = Nothing
+          , updateStatusOptsActivities = []
+          , updateStatusOptsNewStatus = UpdateStatusOnline
+          , updateStatusOptsAFK = False
+          }
   GuildMemberUpdate gid _ user (Just newNickname) -> do
     let uid = userId user
     m <- readTVarIO nameMap
