@@ -60,6 +60,14 @@ handler :: TVar NameMap -> Event -> DiscordHandler ()
 handler nameMap = \case
   Ready _ _ _ _ _ _ (PartialApplication i _) -> do
     putStrLn "ready"
+    sendCommand $
+      UpdateStatus $
+        UpdateStatusOpts
+          { updateStatusOptsSince = Nothing
+          , updateStatusOptsActivities = [mkActivity "you all for fools" ActivityTypeGame]
+          , updateStatusOptsNewStatus = UpdateStatusOnline
+          , updateStatusOptsAFK = False
+          }
     oldComs <- rc $ GetGlobalApplicationCommands i
     let removedComs =
           filter
@@ -68,14 +76,6 @@ handler nameMap = \case
     forM_ removedComs $ rc . DeleteGlobalApplicationCommand i . applicationCommandId
     forM_ coms $ rc . CreateGlobalApplicationCommand i
     putStrLn "commands registered"
-    sendCommand $
-      UpdateStatus $
-        UpdateStatusOpts
-          { updateStatusOptsSince = Nothing
-          , updateStatusOptsActivities = []
-          , updateStatusOptsNewStatus = UpdateStatusOnline
-          , updateStatusOptsAFK = False
-          }
   GuildMemberUpdate gid _ user (Just newNickname) -> do
     let uid = userId user
     m <- readTVarIO nameMap
