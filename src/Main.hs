@@ -88,7 +88,7 @@ handler nameMap = \case
         CreateMessageDetailed
           cid
           MessageDetailedOpts
-            { messageDetailedContent = "Want to add \"" <> newNickname <> "\" as a favorite?"
+            { messageDetailedContent = "<@" <> show uid <> "> Want to add \"" <> newNickname <> "\" as a favorite?"
             , messageDetailedTTS = False
             , messageDetailedEmbeds = Nothing
             , messageDetailedFile = Nothing
