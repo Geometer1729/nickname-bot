@@ -13,3 +13,11 @@ repl *ARGS:
 # Run ghcid -- auto-recompile and run `main` function
 run:
     ghcid -T :main
+
+here:
+  echo sudo systemctl stop nickname-bot.service | ssh tub
+  cabal run
+
+there:
+  echo sudo systemctl start nickname-bot.service | ssh tub
+
