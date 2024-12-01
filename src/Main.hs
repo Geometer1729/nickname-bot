@@ -80,7 +80,7 @@ handler nameMap = \case
         CreateMessageDetailed
           cid
           MessageDetailedOpts
-            { messageDetailedContent = "Want to add " <> newNickname <> " as a favorite?"
+            { messageDetailedContent = "Want to add \"" <> newNickname <> "\" as a favorite?"
             , messageDetailedTTS = False
             , messageDetailedEmbeds = Nothing
             , messageDetailedFile = Nothing
@@ -180,7 +180,6 @@ handler nameMap = \case
                         M.alter (Just . (newName :) . fromMaybe []) uid
                     respond $ interactionResponseBasic "Added"
                   "rm" -> do
-                    putStrLn "running rm"
                     targetName <- getNameArg
                     liftIO $
                       updateNameMap nameMap $
@@ -210,8 +209,7 @@ handler nameMap = \case
             InteractionResponseUpdateMessage $
               InteractionResponseMessage
                 { interactionResponseMessageTTS = Nothing
-                , interactionResponseMessageContent =
-                    Just $ "Nicked to " <> newName <> cap
+                , interactionResponseMessageContent = Nothing
                 , interactionResponseMessageEmbeds = Nothing
                 , interactionResponseMessageAllowedMentions = Nothing
                 , interactionResponseMessageFlags = Nothing
