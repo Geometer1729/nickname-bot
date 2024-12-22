@@ -82,6 +82,7 @@ common shared
     , directory
     , discord-haskell
     , filepath
+    , hinotify
     , mtl
     , optics-core
     , profunctors

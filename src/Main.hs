@@ -14,6 +14,9 @@ import Discord.Internal.Rest.Guild
 import Discord.Internal.Rest.Interactions
 import Discord.Requests (MessageDetailedOpts (..))
 import Relude.Unsafe (read, (!!))
+import System.Directory (removeFile)
+import System.INotify (EventVariety (Create), addWatch, initINotify)
+import System.INotify qualified as INotify
 import System.Random
 
 main :: IO ()
@@ -60,6 +63,19 @@ flushMap nameMap = do
 handler :: TVar [Text] -> TVar NameMap -> Event -> DiscordHandler ()
 handler dontPingFor nameMap = \case
   Ready _ _ _ _ _ _ (PartialApplication i _) -> do
+    ino <- liftIO initINotify
+    h <- ask
+    void $ liftIO $ addWatch ino [Create] "/data/discord-bots/nickname-bot" $ \case
+      INotify.Created False _ -> do
+        putStrLn "Triggered"
+        t <- T.strip . decodeUtf8 <$> readFileBS "/data/discord-bots/nickname-bot/report"
+        print t
+        (`runReaderT` h) $
+          rc_ $
+            CreateMessage (DiscordId $ Snowflake 1312176640557715476) $
+              "<@283006687412224001> Merge report: " <> t
+        removeFile "/data/discord-bots/nickname-bot/report"
+      _ -> pass
     putStrLn "ready"
     sendCommand $
       UpdateStatus $
