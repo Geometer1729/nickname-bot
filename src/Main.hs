@@ -268,7 +268,7 @@ handler dontPingFor nameMap = \case
                 , optionsData =
                   Just
                     ( OptionsDataValues
-                        [OptionDataValueString {optionDataValueString = Right w}]
+                        [OptionDataValueString {optionDataValueString = Left w}]
                       )
                 }
             , interactionUser = MemberOrUser memberOrUser
