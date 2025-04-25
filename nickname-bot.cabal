@@ -33,6 +33,7 @@ common shared
     relude (Relude as Prelude, Relude.Container.One),
     relude
 
+  -- all the good ones
   default-extensions:
     BangPatterns
     ConstraintKinds

@@ -265,6 +265,11 @@ handler dontPingFor nameMap = \case
             { applicationCommandData =
               ApplicationCommandDataChatInput
                 { applicationCommandDataName = commandName
+                , optionsData =
+                  Just
+                    ( OptionsDataValues
+                        [OptionDataValueString {optionDataValueString = Right w}]
+                      )
                 }
             , interactionUser = MemberOrUser memberOrUser
             }
@@ -278,7 +283,17 @@ handler dontPingFor nameMap = \case
                     Left (GuildMember {memberUser = Just user}) -> pure $ userId user
                     _ -> die "no user"
                   nameMap' <- readTVarIO nameMap
-                  pure $ fromMaybe [] . M.lookup uid $ nameMap'
+                  let names = fromMaybe [] . M.lookup uid $ nameMap'
+                  pure $
+                    sortOn
+                      ( Down
+                          . ( \name ->
+                                length $
+                                  takeWhile (uncurry (==)) $
+                                    T.zip (T.toLower name) (T.toLower w)
+                            )
+                      )
+                      names
               respond $ do
                 InteractionResponseAutocompleteResult $
                   InteractionResponseAutocompleteString $
