@@ -96,7 +96,7 @@ handler dontPingFor nameMap = \case
   -- MessageCreate m@Message{messageChannelId = DiscordId (Snowflake 1319497196760207400)} -> do
   MessageCreate m@Message {messageChannelId = DiscordId (Snowflake 1319497196760207400)} -> do
     -- Create thread for messages in specific channel
-    let threadName = "Thread: " <> T.take 50 (messageContent m)
+    let threadName = T.take 50 (messageContent m)
         opts =
           StartThreadOpts
             { startThreadName = threadName
