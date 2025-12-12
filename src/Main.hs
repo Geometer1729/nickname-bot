@@ -9,7 +9,7 @@ import Discord
 import Discord.Interactions
 import Discord.Internal.Rest
 import Discord.Internal.Rest.ApplicationCommands
-import Discord.Internal.Rest.Channel (ChannelRequest (..))
+import Discord.Internal.Rest.Channel (ChannelRequest (..), StartThreadOpts (..))
 import Discord.Internal.Rest.Guild
 import Discord.Internal.Rest.Interactions
 import Discord.Requests (MessageDetailedOpts (..))
@@ -72,7 +72,7 @@ handler dontPingFor nameMap = \case
         print t
         (`runReaderT` h) $
           rc_ $
-            CreateMessage (DiscordId $ Snowflake 1312176640557715476) $
+            CreateMessage (DiscordId $ Snowflake 1319497196760207400) $
               "<@283006687412224001> Merge report: " <> t
         removeFile "/data/discord-bots/nickname-bot/report"
       _ -> pass
@@ -93,6 +93,24 @@ handler dontPingFor nameMap = \case
     forM_ removedComs $ rc . DeleteGlobalApplicationCommand i . applicationCommandId
     forM_ coms $ rc . CreateGlobalApplicationCommand i
     putStrLn "commands registered"
+  -- MessageCreate m@Message{messageChannelId = DiscordId (Snowflake 1319497196760207400)} -> do
+  MessageCreate m@Message {messageChannelId = DiscordId (Snowflake 1319497196760207400)} -> do
+    -- Create thread for messages in specific channel
+    let threadName = "Thread: " <> T.take 50 (messageContent m)
+        opts =
+          StartThreadOpts
+            { startThreadName = threadName
+            , startThreadAutoArchive = Just 60
+            , startThreadRateLimit = Nothing
+            }
+    putStrLn "DEBUG"
+    result <- restCall $ StartThreadFromMessage (messageChannelId m) (messageId m) opts
+    case result of
+      Left err -> putStrLn $ "Failed to create thread: " <> show err
+      Right thread -> do
+        putStrLn $ "Created thread for message: " <> show (messageId m)
+        -- Post "Answers here:" message in the thread
+        void $ restCall $ CreateMessage (channelId thread) "Answers here:"
   GuildMemberUpdate gid _ user (Just newNickname) -> do
     let uid = userId user
     m <- readTVarIO nameMap
